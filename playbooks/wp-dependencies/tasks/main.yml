@@ -1,0 +1,96 @@
+---
+# tasks file for wp-dependencies
+- name: Update packages (this is equivalent to yum update -y)
+  yum: name=* state=latest
+
+- name: Add remi-php71
+  yum_repository:
+    name: remi-php71
+    description: Remi's PHP 7.1 RPM repository for Enterprise Linux $releasever - $basearch
+    mirrorlist: http://rpms.remirepo.net/enterprise/$releasever/php71/mirror
+    enabled: yes
+    gpgcheck: 1
+    gpgkey: http://rpms.remirepo.net/RPM-GPG-KEY-remi
+
+- name: Install dependencies for WordPress
+  yum: name={{ item }} state=present enablerepo=remi,remi-php56
+  with_items:
+        - httpd
+        - mariadb-server 
+        - mariadb
+        - php 
+        - php-mysql
+        - MySQL-python
+        - python-pip
+
+#- name: install pip3
+#  yum: name=python3-pip state=present
+
+- name: install the package, force upgrade
+  pip: 
+    name: pip
+    extra_args: --upgrade
+
+- name: install pexpect
+  pip:
+    name: pexpect
+
+- name: Ensure MariaDB is running (and enable it at boot)
+  service: name=mariadb state=started enabled=yes
+
+
+- name: Copy ~/.my.cnf to nodes
+  copy: src=/etc/ansible/playbooks/.my.cnf dest=/root/
+
+#- name: "Copy .my.cfg"
+#  copy:
+#    src: ".my.cfg"
+#    dest: /root/
+#  with_fileglob: "*.my.cfg*"
+
+- name: "Copy wp-config"
+  copy:
+    src: "wp-config-sample.php"
+    dest: /root/
+  with_fileglob: "*wp-config-sample.php*"
+
+
+#- name: Copy ~/.my.cnf to nodes
+#  copy: remote_src=/etc/ansible/playbooks/my.cnf dest=/root/
+
+- name: "Secure MariaDB"
+  expect:
+    command: /bin/mysql_secure_installation
+    responses:
+      'Enter current password for root \(enter for none\): ': ''
+      'Set root password\? \[Y\/n\] ': "y" 
+      '.*New password:.*': "1234"
+      '.*Re-enter new password:.*': "1234"
+      'Remove anonymous users\? \[Y\/n\] ': "y"
+      'Disallow root login remotely\? \[Y\/n\] ': "y"
+      'Remove test database and access to it\? \[Y\/n\] ': "y"
+      'Reload privilege tables now\? \[Y\/n\] ': "y"
+    echo: yes
+
+- name: Create MariaDB database
+  mysql_db: name={{ wp_mysql_db }} state=present
+
+- name: Create MariaDB username and password
+  mysql_user:
+        login_user=root
+        login_password=1234
+        name={{ wp_mysql_user }}
+        password={{ wp_mysql_password }}
+        priv=*.*:ALL
+
+- name: ensure apache is running
+  service:
+        name: httpd
+        state: restarted
+        enabled: True
+
+- name: Stop and disable firewalld.
+  service:
+        name: firewalld
+        state: stopped
+        enabled: False
